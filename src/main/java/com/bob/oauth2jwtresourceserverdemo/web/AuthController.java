@@ -1,5 +1,7 @@
 package com.bob.oauth2jwtresourceserverdemo.web;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -74,7 +76,7 @@ public class AuthController {
 //    }
 
     @PostMapping("/get-token")
-    public Map<String, String> getTokens(
+    public ResponseEntity<Map<String, String>> getTokens(
             String grantType,
             String username,
             String password,
@@ -97,12 +99,18 @@ public class AuthController {
 
         }
         if(grantType.equals("refresh_token")){
-            Jwt jwt = jwtDecoder.decode(refreshToken);
-            subject = jwt.getSubject();
-            UserDetails userDetails = userDetailsService.loadUserByUsername(subject);
-            Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
-            scope = authorities
-                    .stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
+            try{
+                Jwt jwt = jwtDecoder.decode(refreshToken);
+                subject = jwt.getSubject();
+                UserDetails userDetails = userDetailsService.loadUserByUsername(subject);
+                Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
+                scope = authorities
+                        .stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
+
+            } catch (JwtException e) {
+                return new ResponseEntity<>(Map.of("errorMessage", e.getMessage()), HttpStatus.UNAUTHORIZED);
+            }
+
         }
 
         JwtClaimsSet jwtClaims = JwtClaimsSet.builder()
@@ -126,7 +134,7 @@ public class AuthController {
             String genRefreshToken = jwtEncoder.encode(JwtEncoderParameters.from(jwtRefreshClaims)).getTokenValue();
             tokens.put("refresh_token", genRefreshToken);
         }
-        return tokens;
+        return new ResponseEntity<>(tokens, HttpStatus.OK);
     }
 
 //    @PostMapping("/get-token")
@@ -172,25 +180,30 @@ public class AuthController {
 //    }
 
     @PostMapping("/refresh-token")
-    public Map<String, String> refreshToken(String refreshToken) {
+    public ResponseEntity<Map<String, String>> refreshToken(String refreshToken) {
         Instant instant = Instant.now();
-        Jwt jwt = jwtDecoder.decode(refreshToken);
-        String subject = jwt.getSubject();
-        UserDetails userDetails = userDetailsService.loadUserByUsername(subject);
-        Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
-        String scope = authorities
-                .stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
         Map<String, String> token = new HashMap<>();
-        JwtClaimsSet jwtClaims = JwtClaimsSet.builder()
-                .subject(subject)
-                .issuedAt(instant)
-                .expiresAt(instant.plus(5, ChronoUnit.MINUTES))
-                .issuer("security-service")
-                .claim("scope", scope)
-                .build();
-        String accessToken = jwtEncoder.encode(JwtEncoderParameters.from(jwtClaims)).getTokenValue();
-        token.put("access_token", accessToken);
-        return token;
+        try{
+            Jwt jwt = jwtDecoder.decode(refreshToken);
+            String subject = jwt.getSubject();
+            UserDetails userDetails = userDetailsService.loadUserByUsername(subject);
+            Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
+            String scope = authorities
+                    .stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
+
+            JwtClaimsSet jwtClaims = JwtClaimsSet.builder()
+                    .subject(subject)
+                    .issuedAt(instant)
+                    .expiresAt(instant.plus(5, ChronoUnit.MINUTES))
+                    .issuer("security-service")
+                    .claim("scope", scope)
+                    .build();
+            String accessToken = jwtEncoder.encode(JwtEncoderParameters.from(jwtClaims)).getTokenValue();
+            token.put("access_token", accessToken);
+        }catch(JwtException e){
+            return new ResponseEntity<>(Map.of("errorMessage", e.getMessage()), HttpStatus.UNAUTHORIZED);
+        }
+        return new ResponseEntity<>(token, HttpStatus.OK);
     }
 
 }
