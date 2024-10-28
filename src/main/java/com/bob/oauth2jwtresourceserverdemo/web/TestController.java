@@ -13,7 +13,7 @@ import java.util.Map;
 public class TestController {
 
     @GetMapping("/profile")
-    @PreAuthorize("hasAuthority('SCOPE_USER')")
+    @PreAuthorize("hasAuthority('ROLE_USER')")
     public Map<String, Object> test(Authentication authentication) {
         return Map.of(
                 "message", "test",
@@ -31,15 +31,14 @@ public class TestController {
 //    }
 //
     @GetMapping("/admin")
-    @PreAuthorize("hasAuthority('SCOPE_ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public String getDataAdmin(){
         return "get data for admin";
     }
 //
-//    @GetMapping("/user")
-//    @PreAuthorize("hasAuthority('SCOPE_USER')")
-//    public String getDataUser(){
-//        return "get data for user";
-//    }
+    @GetMapping("/public")
+    public String getPublicData(){
+        return "get data for everyone";
+    }
 
 }

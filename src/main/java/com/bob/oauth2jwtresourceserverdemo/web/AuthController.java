@@ -1,10 +1,12 @@
 package com.bob.oauth2jwtresourceserverdemo.web;
 
+import com.bob.oauth2jwtresourceserverdemo.service.impl.CustomUserDetailsService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -84,15 +86,22 @@ public class AuthController {
             String refreshToken
             )
     {// note: now that we created a Bean for both "UserDetailsService" and "AuthenticationManager" we can directly receive the username and the password from the user
+//        System.out.printf("username: %s | password: %s%n", username, password);
         String subject = null;
         String scope = null;
         Map<String, String> tokens = new HashMap<>();
         Instant instant = Instant.now();
 
         if(grantType.equals("password")){
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(username, password)
-            );
+            Authentication authentication = null;
+            try {
+                authentication = authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(username, password)
+                );
+            } catch (AuthenticationException e) {
+                System.out.printf("ERROR: %s%n", e.getMessage());
+                return new ResponseEntity<>(Map.of("errorMessage", e.getMessage()), HttpStatus.UNAUTHORIZED);
+            }
             subject = authentication.getName();
             scope = authentication.getAuthorities()
                     .stream().map(GrantedAuthority::getAuthority).collect(Collectors.joining(" "));
