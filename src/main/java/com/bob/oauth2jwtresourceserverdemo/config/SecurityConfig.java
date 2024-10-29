@@ -1,5 +1,6 @@
 package com.bob.oauth2jwtresourceserverdemo.config;
 
+import com.bob.oauth2jwtresourceserverdemo.service.impl.CustomUserDetailsService;
 import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -12,7 +13,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -25,69 +26,82 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
     private final RsaKeysConfig rsaKeysConfig;
     private final PasswordEncoder passwordEncoder;
     private final UserDetailsService userDetailsService;
 
-    public SecurityConfig(RsaKeysConfig rsaKeysConfig, PasswordEncoder passwordEncoder,UserDetailsService userDetailsService) {
+    public SecurityConfig(RsaKeysConfig rsaKeysConfig, PasswordEncoder passwordEncoder, UserDetailsService userDetailsService) {
         this.rsaKeysConfig = rsaKeysConfig;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
     }
 
+    @Bean
+    public AuthenticationManager authenticationManager() {
+        DaoAuthenticationProvider daoAuthenticationProvider = new DaoAuthenticationProvider();
+        daoAuthenticationProvider.setUserDetailsService(userDetailsService);
+        daoAuthenticationProvider.setPasswordEncoder(passwordEncoder);
+        return new ProviderManager(daoAuthenticationProvider);
+    }
 
-//    @Bean
-//    public InMemoryUserDetailsManager inMemoryUserDetailsManager(){
+//    @Bean  // I commented this after creating my custom implementation for the userDetailsService interface of spring security so that i can load users from db
+//    public UserDetailsService inMemoryUserDetailsManager() {
 //        return new InMemoryUserDetailsManager(
-//                User.withUsername("USER").password(passwordEncoder.encode("12345")).authorities("USER").build(),
-//                User.withUsername("ADMIN").password(passwordEncoder.encode("12345")).authorities("USER","ADMIN").build()
+//                User.withUsername("user1").password(passwordEncoder.encode("1234")).authorities("USER").build(),
+//                User.withUsername("user2").password(passwordEncoder.encode("1234")).authorities("USER").build(),
+//                User.withUsername("admin").password(passwordEncoder.encode("1234")).authorities("USER", "ADMIN").build()
 //        );
 //    }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
-        return httpSecurity
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
-                .sessionManagement(sess->sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorizeRequests -> authorizeRequests
-                        .requestMatchers("/h2-console/**", "/auth/**").permitAll()
+                        .requestMatchers("/auth/**", "/h2-console/**").permitAll() //if you remove this you will not be able to get the auth token because itself expects you to submit a token as well
                         .anyRequest().authenticated()
                 )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .oauth2ResourceServer(oauth -> oauth
+                        .jwt(jwtConfigurer -> jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter())) //adding this solved the problem of SCOPE_ROLE_... prefix
+
+                )
+//                .userDetailsService(userDetailsService)
+//                .authenticationManager(authenticationManager(customUserDetailsService, passwordEncoder))
                 .httpBasic(Customizer.withDefaults())
-                .oauth2ResourceServer((oauth2) -> oauth2.jwt(Customizer.withDefaults()))
                 .build();
     }
 
     @Bean
-    public JwtEncoder jwtEncoder(){
+    JwtDecoder jwtDecoder() {
+        return NimbusJwtDecoder.withPublicKey(rsaKeysConfig.publicKey()).build();
+    }
+
+    @Bean
+    JwtEncoder jwtEncoder() {
         JWK jwk = new RSAKey.Builder(rsaKeysConfig.publicKey()).privateKey(rsaKeysConfig.privateKey()).build();
         JWKSource<SecurityContext> jwkSource = new ImmutableJWKSet<>(new JWKSet(jwk));
         return new NimbusJwtEncoder(jwkSource);
     }
 
-    @Bean
-    public JwtDecoder jwtDecoder(){
-        return NimbusJwtDecoder.withPublicKey(rsaKeysConfig.publicKey()).build();
-    }
 
-    @Bean
-    public DaoAuthenticationProvider authenticationProvider(){
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder);
-        return authProvider;
+    //create a custom authentication converter : authorities => ROLE_... instead of SCOPE_ROLE_...
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        authoritiesConverter.setAuthorityPrefix("");  // No prefix added
+        authoritiesConverter.setAuthoritiesClaimName("scope");  // Uses "scope" claim as is
+        JwtAuthenticationConverter jwtAuthConverter = new JwtAuthenticationConverter();
+        jwtAuthConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        return jwtAuthConverter;
     }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
-        return authenticationConfiguration.getAuthenticationManager();
-    }
-
 }

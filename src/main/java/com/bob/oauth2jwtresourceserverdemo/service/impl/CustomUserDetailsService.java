@@ -1,27 +1,34 @@
-package com.bob.oauth2jwtresourceserverdemo.service.Impl;
+package com.bob.oauth2jwtresourceserverdemo.service.impl;
 
-import com.bob.oauth2jwtresourceserverdemo.model.User;
-import com.bob.oauth2jwtresourceserverdemo.repository.UserRepo;
+import com.bob.oauth2jwtresourceserverdemo.model.AppUser;
+import com.bob.oauth2jwtresourceserverdemo.model.Role;
+import com.bob.oauth2jwtresourceserverdemo.service.AppUserService;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
+    private final AppUserService appUserService;
 
-    private final UserRepo userRepository;
-
-    public CustomUserDetailsService(UserRepo userRepository) {
-        this.userRepository = userRepository;
+    public CustomUserDetailsService(AppUserService appUserService) {
+        this.appUserService = appUserService;
     }
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username);
-//        Collection<GrantedAuthority> authorities = new ArrayList<>();
-//        appUser.getRoles().forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getRoleName())));
-        return new org.springframework.security.core.userdetails.User(user.getUsername(), user.getPassword(), user.getAuthorities());
+        AppUser appUser = appUserService.loadUserByUsername(username);
+        if (appUser == null) {
+            throw new UsernameNotFoundException(username);
+        }
+        String[] roles = appUser.getRoles().stream().map(Role::getRoleName).toArray(String[]::new);
+        UserDetails principal = User.withUsername(username).password(appUser.getPassword()).roles(roles).build();
+        System.out.printf("principal: %s ", principal);
+        return principal;
     }
 }
-
